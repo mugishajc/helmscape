@@ -1,0 +1,13 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/mugishajc/catalog-service
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests: { cpu: 50m, memory: 64Mi }
+  limits:   { cpu: 500m, memory: 256Mi }
+
+service:
+  port: 8000
