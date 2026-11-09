@@ -1,0 +1,41 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        service: [orders-service, catalog-service]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e .[dev]
+      - run: pytest -q
+
+  lint-manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install kubeconform and helm
+        run: |
+          curl -sSLf https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar -xz -C /usr/local/bin kubeconform
+          curl -sSLf https://get.helm.sh/helm-v3.15.4-linux-amd64.tar.gz | tar -xz --strip-components=1 -C /usr/local/bin linux-amd64/helm
+      - name: Validate kustomize overlays
+        run: |
+          for env in staging production; do
+            kubectl kustomize k8s/overlays/$env | kubeconform -strict -summary -ignore-missing-schemas
+          done
+      - name: Lint helm charts
+        run: |
+          for c in helm/*/; do helm lint "$c"; done
