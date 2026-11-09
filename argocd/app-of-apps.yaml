@@ -1,0 +1,19 @@
+# Argo CD "app of apps" pattern: a single Application that points at a folder of
+# Application manifests, which in turn deploy the real workloads from this repo.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: shop-root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mugishajc/cloud-native-gitops-demo.git
+    targetRevision: main
+    path: argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
