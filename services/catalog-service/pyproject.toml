@@ -1,0 +1,12 @@
+[project]
+name = "catalog-service"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "prometheus-client==0.20.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.3"]
