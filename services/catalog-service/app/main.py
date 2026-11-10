@@ -1,6 +1,7 @@
 """Catalog service: item lookup for the orders service."""
 from __future__ import annotations
 
+import utils.session
 import os
 from typing import Dict
 

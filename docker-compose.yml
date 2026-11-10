@@ -8,3 +8,6 @@ services:
       CATALOG_URL: http://catalog-service:8000
     depends_on: [catalog-service]
     ports: ["8002:8000"]
+  users-service:
+    build: ./services/users-service
+    ports: ["8003:8000"]
