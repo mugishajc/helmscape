@@ -1,94 +1,141 @@
-# cloud-native-gitops-demo
+# helmscape
 
-A small reference of how I ship a service to Kubernetes. Two Python microservices, containerised, packaged as Helm charts, deployed through Argo CD with the app-of-apps pattern, images built and pushed by GitHub Actions on every push to `main`.
+Microservices on Kubernetes. Three Python services, containerised, packaged as Helm charts and Kustomize overlays, deployed through Argo CD with the app-of-apps pattern. GitHub Actions builds and pushes images on every merge to `main`.
 
 Everything here is working code you can run end to end.
 
-## What is in the repo
+## Repository layout
 
 ```
 services/
-  catalog-service/   FastAPI item catalog with pytest and a Dockerfile
-  orders-service/    FastAPI orders API that calls the catalog, with tests
-k8s/
-  base/              Kustomize base: Deployments, Services, HPA, Namespace
-  overlays/          Per-environment overlays for staging and production
+  catalog-service/   FastAPI item catalog
+  orders-service/    FastAPI orders API (calls catalog-service for prices)
+  users-service/     FastAPI user account management
 helm/
-  catalog-service/   Helm chart for the catalog service
-  orders-service/    Helm chart for the orders service
+  catalog-service/   Helm chart with HPA and configurable values
+  orders-service/    Helm chart with HPA and configurable values
+  users-service/     Helm chart with HPA and configurable values
+k8s/
+  base/              Kustomize base: Deployments, Services, HPAs, NetworkPolicies, Namespace
+  overlays/          Per-environment overlays (staging, production)
 argocd/
   app-of-apps.yaml   Root Argo CD Application
   apps/              One Argo CD Application per environment
+monitoring/
+  *-service-monitor.yaml   ServiceMonitor CRDs for Prometheus scraping
+docs/
+  architecture.md    Architecture overview
 .github/workflows/
-  ci.yml             Tests, kubeconform, helm lint on every PR
+  ci.yml             Tests + kubeconform + helm lint on every PR
   build-and-push.yml Multi-arch images to GHCR on push to main
-docker-compose.yml   Run both services locally
+docker-compose.yml   Run all three services locally
+Makefile             lint, test, build, helm-lint, kustomize-build
 ```
 
-## The services
+## Services
 
-Two small FastAPI services with `/healthz`, `/readyz` and `/metrics` endpoints. Orders calls Catalog to look up prices before persisting an order. In-memory stores keep the example focused on the delivery pipeline, not the database layer.
+Three FastAPI services, each with `/healthz`, `/readyz`, and `/metrics` endpoints.
 
-Run the tests:
+| Service | Purpose | Dependencies |
+|---------|---------|--------------|
+| catalog-service | Item lookup (name, price) | None |
+| orders-service | Order creation with price resolution | catalog-service |
+| users-service | User CRUD with email validation | None |
 
-```bash
-cd services/catalog-service && pip install -e .[dev] && pytest -q
-cd services/orders-service   && pip install -e .[dev] && pytest -q
-```
+In-memory stores keep the example focused on the delivery pipeline, not the database layer.
 
-Run the pair locally:
+## Quick start
+
+Run all services locally:
 
 ```bash
 docker compose up --build
 curl -s localhost:8001/items
 curl -s -X POST localhost:8002/orders -H 'content-type: application/json' \
      -d '{"item_id": 1, "quantity": 3}'
+curl -s -X POST localhost:8003/users -H 'content-type: application/json' \
+     -d '{"name": "Alice", "email": "alice@example.com"}'
+```
+
+Run tests:
+
+```bash
+make test
+```
+
+Or per-service:
+
+```bash
+cd services/catalog-service && pip install -e .[dev] && pytest -q
 ```
 
 ## Kubernetes with Kustomize
 
-`k8s/base` has the shared Deployments, Services, HorizontalPodAutoscaler and Namespace. Each environment overlay patches replica counts and image tags. Preview what will be applied:
+`k8s/base/` has Deployments, Services, HorizontalPodAutoscalers, NetworkPolicies, and a Namespace. Each environment overlay patches replica counts and image tags.
 
 ```bash
 kubectl kustomize k8s/overlays/staging
 kubectl kustomize k8s/overlays/production
 ```
 
-Hardening defaults used in every Pod: `runAsNonRoot`, read-only root filesystem, `drop: [ALL]` capabilities, resource requests and limits, RuntimeDefault seccomp.
+### NetworkPolicies
+
+A default-deny policy blocks all traffic. Per-service policies open only the required paths:
+
+- orders-service can reach catalog-service on port 8000
+- catalog-service accepts ingress only from orders-service and from the monitoring namespace
+- users-service accepts external ingress only
+- All services allow DNS egress
+
+### Autoscaling
+
+Every service has an HPA targeting 70% CPU, scaling between 2 and 6 replicas.
 
 ## Helm charts
 
-Same workloads packaged as charts so they can be installed with a single command:
-
 ```bash
-helm install orders  ./helm/orders-service
 helm install catalog ./helm/catalog-service
+helm install orders  ./helm/orders-service
+helm install users   ./helm/users-service
 ```
 
-Typical overrides (replicas, image tag, resources, autoscaling) live in `values.yaml`.
+Each chart supports replica count, image, resources, and autoscaling overrides through `values.yaml`.
 
 ## Argo CD (GitOps)
 
-The cluster is the source of truth for what is running. Git is the source of truth for what should be running. Argo CD reconciles the two.
+Git is the source of truth for what should be running. Argo CD reconciles the cluster to match.
 
 ```bash
 kubectl apply -n argocd -f argocd/app-of-apps.yaml
 ```
 
-`shop-root` points Argo CD at `argocd/apps/`, where one Application per environment points at the corresponding Kustomize overlay. Staging is set to automated sync with prune and self-heal. Production is manual by default: once a staging soak is clean, promote by changing the image tag in `k8s/overlays/production/kustomization.yaml` and merging.
+`shop-root` points at `argocd/apps/`, where one Application per environment references the matching Kustomize overlay. Staging syncs automatically with prune and self-heal. Production is manual: promote by updating the image tag and merging.
+
+## Monitoring
+
+ServiceMonitor CRDs in `monitoring/` tell Prometheus (kube-prometheus-stack) to scrape `/metrics` on each service every 30 seconds.
 
 ## CI/CD
 
-`ci.yml` runs on every PR:
-- `pytest` for each service
-- `kubeconform` on both overlays
-- `helm lint` on each chart
+**ci.yml** (every PR): pytest per service, kubeconform on both overlays, helm lint on every chart.
 
-`build-and-push.yml` runs on `main`:
-- builds each service image with Buildx
-- pushes to `ghcr.io/mugishajc/<service>` tagged with the commit SHA and `latest`
+**build-and-push.yml** (push to main): multi-arch Docker images to `ghcr.io/mugishajc/<service>`, tagged with commit SHA and `latest`.
 
 To cut a release: bump `appVersion` in each chart, bump `newTag` in the overlays, commit, and Argo CD rolls it out.
+
+## Makefile targets
+
+| Target | What it does |
+|--------|-------------|
+| `make lint` | Runs ruff on all service code |
+| `make test` | Runs pytest for each service |
+| `make build` | Builds Docker images locally |
+| `make helm-lint` | Lints all Helm charts |
+| `make kustomize-build` | Validates both Kustomize overlays |
+
+## Security defaults
+
+Every Pod enforces: `runAsNonRoot`, read-only root filesystem, `drop: [ALL]` capabilities, resource requests/limits, RuntimeDefault seccomp profile.
 
 ## Why this shape
 
