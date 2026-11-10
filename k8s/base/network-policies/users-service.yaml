@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-users-service
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: users-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Accept external traffic (from an ingress controller or API gateway).
+    - ports: [{ port: 8000, protocol: TCP }]
+    # Prometheus scraping.
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ port: 8000, protocol: TCP }]
+  egress:
+    # DNS resolution.
+    - to:
+        - namespaceSelector: {}
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]

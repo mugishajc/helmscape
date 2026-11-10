@@ -1,0 +1,8 @@
+# Deny all ingress and egress by default. Each service opens only the ports it needs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]

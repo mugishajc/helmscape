@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-orders-service
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: orders-service }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Accept external traffic (from an ingress controller or API gateway).
+    - ports: [{ port: 8000, protocol: TCP }]
+    # Prometheus scraping.
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports: [{ port: 8000, protocol: TCP }]
+  egress:
+    # DNS resolution.
+    - to:
+        - namespaceSelector: {}
+      ports: [{ port: 53, protocol: UDP }, { port: 53, protocol: TCP }]
+    # Call catalog-service.
+    - to:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: catalog-service }
+      ports: [{ port: 8000, protocol: TCP }]
