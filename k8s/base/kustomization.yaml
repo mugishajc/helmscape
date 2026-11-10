@@ -7,3 +7,5 @@ resources:
   - namespace.yaml
   - catalog-service.yaml
   - orders-service.yaml
+  - users-service.yaml
+  - network-policies/

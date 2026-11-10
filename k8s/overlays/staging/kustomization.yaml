@@ -8,6 +8,8 @@ images:
     newTag: 0.1.0
   - name: ghcr.io/mugishajc/orders-service
     newTag: 0.1.0
+  - name: ghcr.io/mugishajc/users-service
+    newTag: 0.1.0
 patches:
   - target: { kind: Deployment, name: catalog-service }
     patch: |
@@ -15,6 +17,11 @@ patches:
         path: /spec/replicas
         value: 1
   - target: { kind: Deployment, name: orders-service }
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target: { kind: Deployment, name: users-service }
     patch: |
       - op: replace
         path: /spec/replicas
